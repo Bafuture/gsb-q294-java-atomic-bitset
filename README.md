@@ -13,6 +13,18 @@ Pair-wise GSB 标注任务仓库（第 18 批 / 294）。
 > 本仓库是**初始环境快照**：只有工程骨架，不含任何实现代码。
 > 分支说明：`main` 为初始环境；`A`、`B` 为两次独立执行各自的工作分支，均从 `main` 的同一个提交拉出。
 
+## 实现说明
+
+核心类：`com.example.gsb.bitset.AtomicBitSet`
+
+- **字级 CAS，无全局锁**：位按 64 位一“字”存于 `AtomicLongArray`，置位/清位均为单字 `compareAndSet` 自旋。
+- **原子复合操作**：`testAndSet` / `testAndClear` 返回操作前的位值；`getAndSetAll(int...)` 批量置位并返回操作前各 位的状态（`BitSet`）。
+- **区间操作**：`setRange` / `clearRange` / `countRange`，半开区间 `[from, to)`，按字掩码整字处理。
+- **并发基数**：`cardinality()` 与 `countRange(...)` 在并发修改下返回**近似值**（逐字原子读取、非同一时刻的一致快照，期间可能扩容），无并发写时结果精确；`toBitSet()` 同理为弱一致视图。
+- **自动扩容**：下标超容量时按字翻倍扩展，数组引用保存在 `AtomicReference` 中 CAS 安装；并发扩容只有胜者安装、负者复用胜方数组，不使用锁。防丢位双保险：①写线程在字 CAS 成功后校验数组引用，引用已变则在新数组重试；②扩容者安装新数组后做一遍差异迁移，把拷贝窗口内落在旧数组上的变更合并进当前数组。
+- **统计**：`setOperationCount()`（置位类调用次数）、`casRetryCount()`（字 CAS 失败重试次数）、`cardinality()`（当前位数）、`wordCount()`（当前字数），`stats()` 返回 `Stats` 快照记录。
+- **正确性验证**：15 个 JUnit 5 用例，含确定性操作序列的并发压测对照串行模拟、同一位并发 testAndSet 恰好一个线程看到旧值 0、并发扩容不丢位、并发基数有界且静默后精确。
+
 ## 运行方式
 
 ```bash
